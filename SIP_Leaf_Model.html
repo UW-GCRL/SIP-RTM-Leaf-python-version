@@ -85,9 +85,16 @@
   .slider-label .name .unit{font-weight:300;color:var(--text-dim);font-size:.72rem;margin-left:.2rem}
   .slider-label .val{
     font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:var(--accent);
-    background:var(--accent-glow);padding:.1rem .45rem;border-radius:4px;
-    min-width:52px;text-align:right;
+    background:var(--accent-glow);padding:.15rem .4rem;border-radius:4px;
+    min-width:58px;text-align:right;
+    border:1px solid transparent;outline:none;
+    transition:border-color .15s;
+    -moz-appearance:textfield;
   }
+  .slider-label .val:hover{border-color:var(--border)}
+  .slider-label .val:focus{border-color:var(--accent);background:var(--surface2)}
+  .slider-label .val::-webkit-inner-spin-button,
+  .slider-label .val::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 
   input[type=range]{
     -webkit-appearance:none;appearance:none;width:100%;height:4px;
@@ -245,12 +252,12 @@ const DATA_B64 = `H4sIAAXnmGkC/4S9bZImKw6suaGeNBDfa7k2P2f/WxikRwSRJxV1zbrN6lQ58Q
 //  Parameter definitions
 // ═══════════════════════════════════════════════════
 const PARAMS = [
-  {id:'Cab',  label:'Cab',  unit:'µg/cm²', min:0,  max:100, step:0.5, default:30,    desc:'Chlorophyll a+b'},
-  {id:'Car',  label:'Car',  unit:'µg/cm²', min:0,  max:40,  step:0.5, default:10,    desc:'Carotenoids'},
-  {id:'Anth', label:'Anth', unit:'µg/cm²', min:0,  max:20,  step:0.1, default:1.0,   desc:'Anthocyanins'},
-  {id:'Cbrown',label:'C<sub>brown</sub>',unit:'a.u.',min:0,max:2,step:0.01,default:0.0,desc:'Brown pigments'},
-  {id:'Cw',   label:'Cw',   unit:'cm',     min:0,  max:0.07,step:0.001,default:0.015, desc:'Water thickness'},
-  {id:'Cm',   label:'Cm',   unit:'g/cm²',  min:0.001,max:0.03,step:0.0005,default:0.009,desc:'Dry matter'},
+  {id:'Cab',  label:'Cab',  unit:'µg/cm²', min:0,  max:150, step:0.5, default:30,    desc:'Chlorophyll a+b'},
+  {id:'Car',  label:'Car',  unit:'µg/cm²', min:0,  max:60,  step:0.5, default:10,    desc:'Carotenoids'},
+  {id:'Anth', label:'Anth', unit:'µg/cm²', min:0,  max:40,  step:0.1, default:1.0,   desc:'Anthocyanins'},
+  {id:'Cbrown',label:'C<sub>brown</sub>',unit:'a.u.',min:0,max:5,step:0.01,default:0.0,desc:'Brown pigments'},
+  {id:'Cw',   label:'Cw',   unit:'cm',     min:0,  max:0.1, step:0.001,default:0.015, desc:'Water thickness'},
+  {id:'Cm',   label:'Cm',   unit:'g/cm²',  min:0.001,max:0.05,step:0.0005,default:0.009,desc:'Dry matter'},
 ];
 
 const PRESETS = {
@@ -388,17 +395,45 @@ function buildSliders() {
     div.innerHTML = `
       <div class="slider-label">
         <span class="name">${p.label}<span class="unit">${p.unit}</span></span>
-        <span class="val" id="val-${p.id}">${p.default.toFixed(decimals)}</span>
+        <input type="number" class="val" id="val-${p.id}" value="${p.default.toFixed(decimals)}" step="${p.step}">
       </div>
       <input type="range" id="s-${p.id}" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.default}">
     `;
     container.appendChild(div);
 
-    const slider = div.querySelector('input');
-    const valEl = div.querySelector('.val');
+    const slider = div.querySelector('input[type=range]');
+    const numInput = div.querySelector('input[type=number]');
+
+    // Slider → number input
     slider.addEventListener('input', () => {
-      valEl.textContent = parseFloat(slider.value).toFixed(decimals);
+      numInput.value = parseFloat(slider.value).toFixed(decimals);
       update();
+    });
+
+    // Number input → slider (auto-expand range if needed)
+    numInput.addEventListener('input', () => {
+      const v = parseFloat(numInput.value);
+      if (isNaN(v)) return;
+      // Auto-expand slider range
+      if (v > parseFloat(slider.max)) slider.max = v;
+      if (v < parseFloat(slider.min)) slider.min = v;
+      slider.value = v;
+      update();
+    });
+
+    // On blur, clean up the display
+    numInput.addEventListener('blur', () => {
+      const v = parseFloat(numInput.value);
+      if (isNaN(v)) {
+        numInput.value = parseFloat(slider.value).toFixed(decimals);
+      } else {
+        numInput.value = v.toFixed(decimals);
+      }
+    });
+
+    // Enter key triggers blur
+    numInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') numInput.blur();
     });
   });
 }
@@ -414,9 +449,14 @@ function buildPresets() {
       btn.classList.add('active');
       PARAMS.forEach((p, i) => {
         const slider = document.getElementById('s-' + p.id);
-        slider.value = vals[i];
+        const numInput = document.getElementById('val-' + p.id);
         const decimals = p.step < 0.01 ? 4 : p.step < 0.1 ? 3 : p.step < 1 ? 1 : 0;
-        document.getElementById('val-' + p.id).textContent = vals[i].toFixed(decimals);
+        // Reset slider range to defaults then expand if needed
+        slider.min = p.min; slider.max = p.max;
+        if (vals[i] > parseFloat(slider.max)) slider.max = vals[i];
+        if (vals[i] < parseFloat(slider.min)) slider.min = vals[i];
+        slider.value = vals[i];
+        numInput.value = vals[i].toFixed(decimals);
       });
       update();
     });
@@ -430,7 +470,10 @@ function buildPresets() {
 let initialized = false;
 
 function getParams() {
-  return PARAMS.map(p => parseFloat(document.getElementById('s-' + p.id).value));
+  return PARAMS.map(p => {
+    const v = parseFloat(document.getElementById('val-' + p.id).value);
+    return isNaN(v) ? p.default : v;
+  });
 }
 
 function update() {
